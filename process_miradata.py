@@ -23,15 +23,16 @@ def combine_captions(example: Dict, fields_to_combine: List[str]) -> Dict:
     example["combined_caption"] = "\n".join(captions) + ("\n" if captions else "")
     return example
 
-def save_as_csv(dataset: Dataset, output_path: str):
+def save_as_csv(dataset: Dataset, output_path: str, no_header: bool):
     """Saves the dataset as a CSV file.
 
     Args:
         dataset: The Hugging Face dataset.
         output_path: The path to save the CSV file.
+        no_header: Whether to include a header row in the CSV.
     """
     df = dataset.to_pandas()
-    df.to_csv(output_path, index=False)
+    df.to_csv(output_path, index=False, header=(not no_header))
     print(f"Dataset saved to CSV: {output_path}")
 
 def save_as_hf_dataset(dataset: Dataset, output_path: str):
@@ -44,16 +45,20 @@ def save_as_hf_dataset(dataset: Dataset, output_path: str):
     dataset.save_to_disk(output_path)
     print(f"Dataset saved in Hugging Face format: {output_path}")
 
-def save_as_jsonl(dataset: Dataset, output_path: str):
+def save_as_jsonl(dataset: Dataset, output_path: str, only_combined_caption: bool):
     """Saves the dataset as a JSONL file.
 
     Args:
         dataset: The Hugging Face dataset.
         output_path: The path to save the JSONL file.
+        only_combined_caption: Whether to output only the combined_caption field.
     """
     with open(output_path, "w") as f:
         for example in dataset:
-            f.write(json.dumps(example) + "\n")
+            if only_combined_caption:
+                f.write(json.dumps({"combined_caption": example["combined_caption"]}) + "\n")
+            else:
+                f.write(json.dumps(example) + "\n")
     print(f"Dataset saved to JSONL: {output_path}")
 
 def process_and_save_dataset(
@@ -64,7 +69,9 @@ def process_and_save_dataset(
     num_rows: Optional[int],
     row_range: Optional[List[int]],
     random_rows: bool,
-    chunk_size: Optional[int]
+    chunk_size: Optional[int],
+    only_combined_caption: bool,
+    no_header: bool
 ):
     """Processes the dataset, combines captions, and saves it to the specified format.
 
@@ -77,6 +84,8 @@ def process_and_save_dataset(
         row_range: A list specifying the start and end of the row range (None for not using a range).
         random_rows: Whether to select rows randomly.
         chunk_size: Chunk size for processing (None for no chunking).
+        only_combined_caption: Whether to output only the combined_caption field.
+        no_header: Whether to include a header row in the CSV (only for CSV output).
     """
 
     if row_range:
@@ -95,6 +104,12 @@ def process_and_save_dataset(
 
     dataset = dataset.map(lambda example: combine_captions(example, fields_to_combine))
 
+    # Remove all columns except 'combined_caption' if only_combined_caption is True
+    if only_combined_caption:
+        columns_to_keep = {"combined_caption"}
+        columns_to_remove = [col for col in dataset.column_names if col not in columns_to_keep]
+        dataset = dataset.remove_columns(columns_to_remove)
+
     if chunk_size:
         if output_type in ["csv", "jsonl"]:
             num_chunks = len(dataset) // chunk_size + (len(dataset) % chunk_size != 0)
@@ -110,28 +125,26 @@ def process_and_save_dataset(
 
                 if output_type == "csv":
                     chunk_df = chunk_dataset.to_pandas()
-                    chunk_df.to_csv(output_path, index=False, mode=mode, header=(i==0))
+                    chunk_df.to_csv(output_path, index=False, mode=mode, header=(not no_header) and (i==0))
                 elif output_type == "jsonl":
-                    with open(output_path, mode) as f:
-                        for example in chunk_dataset:
-                            f.write(json.dumps(example) + "\n")
-            print(f"Dataset saved to {output_type} in chunks: {output_path}")
+                    save_as_jsonl(chunk_dataset, output_path, only_combined_caption)
 
+            print(f"Dataset saved to {output_type} in chunks: {output_path}")
         else:
             print("Chunking is only implemented for CSV and JSONL output. Saving as a single file/dataset.")
             if output_type == "csv":
-                save_as_csv(dataset, output_path)
+                save_as_csv(dataset, output_path, no_header)
             elif output_type == "hf":
                 save_as_hf_dataset(dataset, output_path)
             elif output_type == "jsonl":
-                save_as_jsonl(dataset, output_path)
+                save_as_jsonl(dataset, output_path, only_combined_caption)
     else:
         if output_type == "csv":
-            save_as_csv(dataset, output_path)
+            save_as_csv(dataset, output_path, no_header)
         elif output_type == "hf":
             save_as_hf_dataset(dataset, output_path)
         elif output_type == "jsonl":
-            save_as_jsonl(dataset, output_path)
+            save_as_jsonl(dataset, output_path, only_combined_caption)
 
 def main():
     parser = argparse.ArgumentParser(description="Combine captions in the MiraData dataset and save the result.")
@@ -191,8 +204,21 @@ def main():
         default=None,
         help="Chunk size for processing large datasets (optional)"
     )
+    parser.add_argument(
+        "--only_combined_caption",
+        action="store_true",
+        help="Output only the combined_caption field",
+    )
+    parser.add_argument(
+        "--no_header",
+        action="store_true",
+        help="Do not include a header row in the CSV output (only for CSV output)",
+    )
 
     args = parser.parse_args()
+
+    if args.no_header and args.output_type != "csv":
+        parser.error("--no_header can only be used with --output_type csv")
 
     # Construct output path
     if args.output_folder:
@@ -219,7 +245,9 @@ def main():
         args.num_rows,
         args.row_range,
         args.random_rows,
-        args.chunk_size
+        args.chunk_size,
+        args.only_combined_caption,
+        args.no_header
     )
 
 if __name__ == "__main__":
