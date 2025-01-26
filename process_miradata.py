@@ -2,8 +2,7 @@ import argparse
 import json
 import os
 import random
-from datasets import load_dataset
-from datasets.arrow_dataset import Dataset
+from datasets import load_dataset, Dataset  # Import Dataset explicitly
 from typing import Dict, List, Optional, Union
 import pandas as pd
 
@@ -20,7 +19,8 @@ def combine_captions(example: Dict, fields_to_combine: List[str]) -> Dict:
     captions = [
         example[field] for field in fields_to_combine if field in example and example[field] is not None
     ]
-    example["combined_caption"] = "\n".join(captions) + ("\n" if captions else "")
+    # Ensure proper newlines and strip whitespace
+    example["combined_caption"] = "\n".join([caption.strip() for caption in captions]) + ("\n" if captions else "")
     return example
 
 def save_as_csv(dataset: Dataset, output_path: str, no_header: bool):
@@ -32,7 +32,7 @@ def save_as_csv(dataset: Dataset, output_path: str, no_header: bool):
         no_header: Whether to include a header row in the CSV.
     """
     df = dataset.to_pandas()
-    df.to_csv(output_path, index=False, header=(not no_header))
+    df.to_csv(output_path, index=False, header=(not no_header), encoding='utf-8') # Added encoding='utf-8'
     print(f"Dataset saved to CSV: {output_path}")
 
 def save_as_hf_dataset(dataset: Dataset, output_path: str):
@@ -53,12 +53,13 @@ def save_as_jsonl(dataset: Dataset, output_path: str, only_combined_caption: boo
         output_path: The path to save the JSONL file.
         only_combined_caption: Whether to output only the combined_caption field.
     """
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding='utf-8') as f: # Added encoding='utf-8'
         for example in dataset:
             if only_combined_caption:
-                f.write(json.dumps({"combined_caption": example["combined_caption"]}) + "\n")
+                json.dump({"combined_caption": example["combined_caption"]}, f, ensure_ascii=False) # ensure_ascii=False
             else:
-                f.write(json.dumps(example) + "\n")
+                json.dump(example, f, ensure_ascii=False) # ensure_ascii=False
+            f.write("\n")
     print(f"Dataset saved to JSONL: {output_path}")
 
 def process_and_save_dataset(
@@ -125,7 +126,7 @@ def process_and_save_dataset(
 
                 if output_type == "csv":
                     chunk_df = chunk_dataset.to_pandas()
-                    chunk_df.to_csv(output_path, index=False, mode=mode, header=(not no_header) and (i==0))
+                    chunk_df.to_csv(output_path, index=False, mode=mode, header=(not no_header) and (i==0), encoding='utf-8') # Added encoding='utf-8'
                 elif output_type == "jsonl":
                     save_as_jsonl(chunk_dataset, output_path, only_combined_caption)
 
