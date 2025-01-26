@@ -16,11 +16,18 @@ def combine_captions(example: Dict, fields_to_combine: List[str]) -> Dict:
     Returns:
         A dictionary with the added 'combined_caption' field.
     """
-    captions = [
-        example[field] for field in fields_to_combine if field in example and example[field] is not None
+    caption_fields = [ # Corrected variable name here to use caption_fields
+        "dense_caption",
+        "main_object_caption",
+        "background_caption",
+        "camera_caption",
+        "style_caption",
     ]
-    # Ensure proper newlines and strip whitespace
-    example["combined_caption"] = "\n".join([caption.strip() for caption in captions]) + ("\n" if captions else "")
+    captions = [
+        example[field] for field in caption_fields if field in example and example[field] is not None
+    ]
+    # Join with newlines, but remove trailing newline if any captions exist
+    example["combined_caption"] = "\n".join(captions)
     return example
 
 def save_as_csv(dataset: Dataset, output_path: str, no_header: bool):
